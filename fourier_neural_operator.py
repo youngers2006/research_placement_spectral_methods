@@ -31,7 +31,7 @@ class Decoder(nnx.Module):
             latent_dim, 
             dec_h1_dim, 
             dec_h2_dim, 
-            original_dim, 
+            out_dim, 
             rngs: nnx.Rngs
         ):
         self.decoder_network = nnx.Sequential(
@@ -39,7 +39,7 @@ class Decoder(nnx.Module):
             nnx.silu(),
             nnx.Linear(dec_h1_dim, dec_h2_dim, rngs=rngs),
             nnx.silu(),
-            nnx.Linear(dec_h2_dim, original_dim * 2, rngs=rngs)
+            nnx.Linear(dec_h2_dim, out_dim * 2, rngs=rngs)
         )
     def __call__(self, x):
         raw_output = self.decoder_network(x)
@@ -103,6 +103,7 @@ class FourierNeuralOperator(nnx.Module):
             Z_dim,
             physical_channels,
             latent_channels,
+            out_channels,
             encoder_h1, 
             encoder_h2,
             num_fno_layers,
@@ -139,13 +140,27 @@ class FourierNeuralOperator(nnx.Module):
             latent_channels,
             decoder_h1,
             decoder_h2,
-            physical_channels,
+            out_channels,
             rngs=rngs
         )
 
-    def __call__(self, a):
+    def forward_pass(self, a):
         v0 = self.encoder(a)
         vn = self.fourier_layers(v0)
         mean_vn, log_variance = self.decoder(vn)
         variance = jnp.exp(log_variance)
         return mean_vn, variance
+    
+    def __call__(self, a):
+        def energy_fn(a_input):
+            energy, energy_var = self.forward_pass(a_input)
+            return energy, energy_var
+        value_grad_aux_fn = jax.value_and_grad(
+            energy_fn, 
+            has_aux=True
+        )
+        (E_full, E_var_full), dE_da = value_grad_aux_fn(a)
+        E = jnp.sum(E_full, axis=(1,2,3))
+        E_var = jnp.sum(E_var_full, axis=(1,2,3))
+        dE_du = dE_da[:3] # <- this needs to be changed once I figure out how to only differentiate wrt boundary nodes
+        return E, dE_du, E_var

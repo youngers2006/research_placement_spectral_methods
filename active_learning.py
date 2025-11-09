@@ -1,14 +1,10 @@
-import os
 import jax
 import jax.numpy as jnp
-import jax.nn as jnn
 import flax.nnx as nnx
-from flax import struct
+import optax
 from tqdm import tqdm
-from typing import Any
-from dataclasses import dataclass
-from functools import partial
 from spectral_sim import spectral_energy_sim
+from fourier_neural_operator import FourierNeuralOperator
 
 
 class ActiveLearningModel:
@@ -26,54 +22,65 @@ class ActiveLearningModel:
     Output: 1. Energy prediction array, 2. Energy sensitivity prediction array.
     Secondary effects: Model will be trained on any data outside a defined confidence bound, data will be generated via a FEM simulation and added to the datastore. 
     """
-    def __init__(self, seen_boundary_displacements, confidence_bound, Model, optimiser, learn_rate, epochs, alpha, gamma):
-        self.Model = Model
-        self.seen_bds = seen_boundary_displacements
+    def __init__(
+            self, 
+            confidence_bound, 
+            tx: optax.GradientTransformation, 
+            learn_rate, 
+            epochs, 
+            alpha,
+            gamma,
+            X_dim,
+            Y_dim, 
+            Z_dim, 
+            physical_channels, 
+            latent_channels, 
+            encoder_h1, 
+            encoder_h2, 
+            num_fno_layers, 
+            modes_x, 
+            modes_y, 
+            modes_z, 
+            decoder_h1, 
+            decoder_h2, 
+            rngs
+        ):
+        out_channels = 1
+        self.Model = FourierNeuralOperator(
+            X_dim,
+            Y_dim, 
+            Z_dim, 
+            physical_channels, 
+            latent_channels,
+            out_channels, 
+            encoder_h1, 
+            encoder_h2, 
+            num_fno_layers, 
+            modes_x, 
+            modes_y, 
+            modes_z, 
+            decoder_h1, 
+            decoder_h2, 
+            rngs
+        )
+        self.optimiser = nnx.Optimizer(self.Model, tx, wrt=nnx.Param)
         self.bound = confidence_bound
         self.LR = learn_rate
         self.epochs = epochs
         self.alpha = alpha
         self.gamma = gamma
-        self.optimiser = optimiser
-        
-    @jax.jit
-    def check_distances(self, applied_displacements):
-        "Takes a batch of displacements and compares them to all displacements that have been seen by the model"
-        seen_bds = self.seen_bds
-        bound = self.bound
-
-        def check_distance(applied_displacement, seen_displacements, bound):
-            diff = seen_displacements - applied_displacement
-            distances_sq = jnp.sum(jnp.square(diff), axis=(1,2))
-            closest_vector_sq = jnp.min(distances_sq)
-            should_query = (closest_vector_sq > bound)
-            return should_query
-        
-        vmapped_check = jax.vmap(fun=check_distance, in_axes=(0, None, None))
-        should_query_batch = vmapped_check(applied_displacements, seen_bds, bound)
-        return should_query_batch
     
-    def query_or_not(self, query_array):
+    def query_or_not(self, energy_variance):
         "Returns an array of indicies which correspond to displacement vectors that should and shouldnt be queried"
+        query_array = (energy_variance > self.bound)
         should_query = jnp.where(query_array)[0]
         not_query = jnp.where(~query_array)[0]
         return should_query, not_query
     
-    def create_graphs(self, boundary_displacements: jax.Array) -> list:
+    def create_grids(self, boundary_displacements: jax.Array):
         "Creates a list of jraph graphs that can be analysed by the Model"
-        graphs = []
-        boundary_nodes = self.Model.boundary_nodes
-        base_nodes = self.Model.base_graph.nodes
-        base_graph = self.Model.base_graph
-
-        def create_graph(boundary_displacement, nodes, _graph, boundary_idx):
-            new_nodes = nodes.at[boundary_idx].set(boundary_displacement)
-            graph = _graph.replace(nodes=new_nodes)
-            return graph
-        
-        create_graph_vmapped = jax.vmap(fun=create_graph, in_axes=(0, None, None, None))
-        graphs = jraph.unbatch(create_graph_vmapped(boundary_displacements, base_nodes, base_graph, boundary_nodes))
-        return graphs
+        grids = 0
+        return grids
     
     def loss_fn(self, target_e_batch, target_e_prime_batch, e_pred_batch, e_prime_pred_batch):
         "Defined loss function: uses MSE for both the energy and energy sensitivity"
@@ -82,10 +89,10 @@ class ActiveLearningModel:
         return (self.alpha * loss_e + self.gamma * loss_e_prime)
     
     @nnx.jit
-    def train_step(self, target_e_batch, target_e_prime_batch, graphs_batch):
+    def train_step(self, target_e_batch, target_e_prime_batch, grid_batch):
         "Defines one step in which a batch is processed and the model weights are updated, jit compiled for speed"
         def wrapped_loss(Model):
-            e_pred_batch, e_prime_pred_batch = Model(graphs_batch)
+            e_pred_batch, e_prime_pred_batch = Model(grid_batch)
             loss = self.loss_fn(
                 target_e_batch,
                 target_e_prime_batch,
@@ -97,44 +104,41 @@ class ActiveLearningModel:
         grads = nnx.grad(wrapped_loss, argnums=0)(self.Model)
         self.optimiser.update(self.Model, grads)
     
-    def Learn(self, applied_displacement_graphs_list: jraph.GraphsTuple, target_e_from_sim, target_e_prime_from_sim):
+    def Learn(self, applied_displacement_grids, target_e_from_sim, target_e_prime_from_sim):
         "Iterates trainstep for a defined number of steps"
         for _ in tqdm(range(self.epochs), desc="Training model on simulation data", leave=False):
             self.train_step(
                 self.Model, 
                 target_e_from_sim, 
                 target_e_prime_from_sim, 
-                applied_displacement_graphs_list
+                applied_displacement_grids
             )
     
-    def query_simulator(self, applied_displacements, Mesh): 
+    def query_simulator(self, applied_displacements, grid): 
         """calls a jax_fem simulation when queried by the model"""
-        vmapped_sim_fn = jax.vmap(fun=, in_axes=(None, None, 0))
+        vmapped_sim_fn = jax.vmap(fun=spectral_energy_sim, in_axes=(None, None, 0))
         e_batch, e_prime_batch = vmapped_sim_fn(
-            Mesh, 
-            self.Model.boundary_nodes, 
+            grid, 
+            boundary_nodes, 
             applied_displacements
         )
         return e_batch, e_prime_batch
         
-    def __call__(self, applied_displacements: jax.Array, Mesh) -> jax.Array:
+    def __call__(self, applied_displacements: jax.Array, grid) -> jax.Array:
         """
         Main call: queries the FEM solver for all samples outside the geometric confidence bound and trains on the data,
             and all samples within the confidence bound are processed by the model. The predictions from the Model and simulation
             are then stitched together and returned.
         """
-        should_query = self.check_distance(applied_displacements)
-        applied_displacement_graphs_list = self.create_graphs(applied_displacements) 
-        query_idx, confident_idx = self.query_or_not(should_query)
+        applied_displacement_grids = self.create_grids(applied_displacements)
+        E, dE_du, E_var = self.Model(applied_displacement_grids)
+        query_idx, _ = self.query_or_not(E_var)
         
-        e_sim, e_prime_sim = self.query_fem(applied_displacements[query_idx], Mesh) 
+        E_sim, dE_du_sim = self.query_simulator(applied_displacements[query_idx], grid) 
         self.Learn(self.Model, applied_displacement_graphs_list[query_idx], e_sim, e_prime_sim)
-        
-        e_scaled, e_prime_scaled = self.Model.call_single(applied_displacement_graphs_list)
-        e_predicted, e_prime_predicted = self.Model.unscale_predictions(e_scaled, e_prime_scaled)
 
-        e_out = restitch(query_idx, confident_idx, e_sim, e_predicted)
-        e_prime_out = restitch(query_idx, confident_idx, e_prime_sim, e_prime_predicted)
-        return e_out, e_prime_out
+        E = E.at[query_idx].set(E_sim)
+        dE_du = dE_du.at[query_idx].set(dE_du_sim)
+        return E, dE_du
            
 
