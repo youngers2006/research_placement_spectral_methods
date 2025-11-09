@@ -39,10 +39,12 @@ class Decoder(nnx.Module):
             nnx.silu(),
             nnx.Linear(dec_h1_dim, dec_h2_dim, rngs=rngs),
             nnx.silu(),
-            nnx.Linear(dec_h2_dim, original_dim, rngs=rngs)
+            nnx.Linear(dec_h2_dim, original_dim * 2, rngs=rngs)
         )
     def __call__(self, x):
-        return self.decoder_network(x)
+        raw_output = self.decoder_network(x)
+        mean, log_var = jnp.split(raw_output, 2, axis=-1)
+        return mean, log_var
 
 class FourierNeuralLayer(nnx.Module):
     def __init__(
@@ -144,4 +146,6 @@ class FourierNeuralOperator(nnx.Module):
     def __call__(self, a):
         v0 = self.encoder(a)
         vn = self.fourier_layers(v0)
-        return self.decoder(vn)
+        mean_vn, log_variance = self.decoder(vn)
+        variance = jnp.exp(log_variance)
+        return mean_vn, variance

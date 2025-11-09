@@ -4,11 +4,8 @@ import jax.numpy as jnp
 import jax.nn as jnn
 import flax.nnx as nnx
 from flax import struct
-import matplotlib.pyplot as plt
 from tqdm import tqdm
 from typing import Any
-import jraph
-import optax
 from dataclasses import dataclass
 from functools import partial
 from spectral_sim import spectral_energy_sim
