@@ -2,11 +2,11 @@ import jax.numpy as jnp
 import flax.nnx as nnx
 
 class MahalanobisFilter(nnx.Module):
-    def __init__(self, learn_rate, threshold, input_size, device):
+    def __init__(self, learn_rate, threshold, input_size):
         self.alpha = learn_rate
         self.threshold = threshold
-        self.mu = jnp.zeros(input_size, dtype=jnp.float32, device=device)
-        self.P = jnp.eye(input_size, dtype=jnp.float32, device=device)
+        self.mu = jnp.zeros(input_size, dtype=jnp.float32)
+        self.P = jnp.eye(input_size, dtype=jnp.float32)
 
     def update_distribution(self, x):
         d = x - self.mu

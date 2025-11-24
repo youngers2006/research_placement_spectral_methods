@@ -4,6 +4,7 @@ import flax.nnx as nnx
 from Swiglu import Swiglu
 from RMSnorm import RMSnorm
 from ZNormCategorical import ZNormCategorical
+from mahalanobis_filter import MahalanobisFilter
 
 class GatedResidualBlock(nnx.Module):
     def __init__(self, dim, rngs):
@@ -23,7 +24,18 @@ class GatedResidualBlock(nnx.Module):
         return x + fx
 
 class GatedResnet(nnx.Module):
-    def __init__(self, input_dim, encoded_dim, output_dim, N, mu, sigma, rngs):
+    def __init__(
+            self, 
+            input_dim, 
+            encoded_dim, 
+            output_dim, 
+            N, 
+            mu, 
+            sigma, 
+            filter_lr,
+            filter_threshold,
+            rngs
+        ):
         self.z_scaler = ZNormCategorical(
             mu,
             sigma
@@ -47,9 +59,28 @@ class GatedResnet(nnx.Module):
             output_dim,
             rngs=rngs
         )
+        self.Mahalanobis_filter = MahalanobisFilter(
+            filter_lr,
+            filter_threshold,
+            encoded_dim
+        )
 
-    def __call__(self, x):
+    def forward_pass(self, x):
         x = self.z_scaler(x)
         x = self.encoder(x)
         x = self.network(x)
-        return self.prediction_head(x)
+        valid = self.Mahalanobis_filter(x)
+        return self.prediction_head(x), valid
+    
+    def __call__(self, Coefficients):
+        def get_e(x):
+            energy, val = self.forward_pass(x)
+            return energy, val
+        fn = jax.value_and_grad(
+            fun=get_e,
+            has_aux=True
+        )
+        (E, valid), dEdC = fn(Coefficients)
+        return E, dEdC, valid
+        
+        
