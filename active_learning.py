@@ -114,7 +114,8 @@ class ActiveLearningModel:
     def query_simulator(self, Coefficients): 
         """calls a jax_fem simulation when queried by the model"""
         vmapped_sim_fn = jax.vmap(fun=spectral_energy_sim, in_axes=(None, None, 0))
-        e_batch, e_prime_batch = vmapped_sim_fn( # need to write the simulator
+        e_batch, e_prime_batch = vmapped_sim_fn(
+            Coefficients
         )
         return e_batch, e_prime_batch
         
