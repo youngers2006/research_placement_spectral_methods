@@ -1,5 +1,4 @@
 import os
-
 import jax
 import jax.numpy as np
 # Ensure double precision everywhere for SciPy Fortran SLSQP

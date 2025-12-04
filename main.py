@@ -5,9 +5,9 @@ import jax
 import jax.numpy as np
 import numpy as onp
 from scipy.optimize import minimize
-
 from RVEAssembly2 import MultiRVEComponent, export_assembled_structured_vts
 from RVEAssemblyDirichletBCs import DirichletBC
+from active_learning import ActiveLearningModel
 
 def build_component(index_map,catalog,squeeze = -0.4):
     comp = MultiRVEComponent.from_index_map(index_map, catalog)
