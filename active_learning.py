@@ -74,7 +74,7 @@ class ActiveLearningModel:
         
     def query_or_not(self, Coefficients):
         "Returns an array of indicies which correspond to displacement vectors that should and shouldnt be queried"
-        query_array = self.M_input_filter(Coefficients)
+        query_array = self.M_input_filter.filter(Coefficients)
         should_query = jnp.where(query_array)[0]
         not_query = jnp.where(~query_array)[0]
         return should_query, not_query
@@ -83,7 +83,7 @@ class ActiveLearningModel:
         "Defined loss function: uses MSE for both the energy and energy sensitivity"
         loss_e = jnp.mean((e_pred_batch - target_e_batch)**2)
         loss_e_prime = jnp.mean((e_prime_pred_batch - target_e_prime_batch)**2)
-        return (self.alpha * loss_e + self.gamma * loss_e_prime)
+        return self.alpha * loss_e + self.gamma * loss_e_prime
     
     @nnx.jit
     def train_step(self, target_e_batch, target_e_prime_batch, Coefficient_batch):
@@ -105,7 +105,6 @@ class ActiveLearningModel:
         "Iterates trainstep for a defined number of steps"
         for _ in tqdm(range(self.epochs), desc="Training Model", leave=False):
             self.train_step(
-                self.Model, 
                 target_energy_batch, 
                 target_derivative_batch, 
                 coefficient_batch
@@ -130,10 +129,8 @@ class ActiveLearningModel:
         query_idx = jnp.concatenate(query_idx, jnp.where(confident_idx, ~valid))
         
         E_sim, dE_dC_sim = self.query_simulator(Coefficients) 
-        self.Learn(self.Model, Coefficients[query_idx], E_sim, dE_dC_sim)
+        self.Learn(Coefficients[query_idx], E_sim, dE_dC_sim)
 
         E = restitch(jnp.where(confident_idx, valid), query_idx, E, E_sim)
         dE_dC = restitch(jnp.where(confident_idx, valid), query_idx, dE_dC, dE_dC_sim)
         return E, dE_dC
-           
-

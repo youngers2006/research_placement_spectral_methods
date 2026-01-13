@@ -12,7 +12,7 @@ class MahalanobisFilter(nnx.Module):
         d = x - self.mu
         self.P = (
             (self.P / (1 - self.alpha)) - (self.alpha / (1 - self.alpha)) 
-            * (((self.P @ self.d) * (jnp.transpose(d) @ self.P)) 
+            * (((self.P @ d) * (jnp.transpose(d) @ self.P)) 
             / ((1 - self.alpha) + self.alpha * (jnp.transpose(d) @ self.P @ d)))
         ) # sherman morris update
         self.mu = (1 - self.alpha) * self.mu + self.alpha * x
