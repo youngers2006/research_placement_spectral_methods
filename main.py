@@ -208,9 +208,6 @@ def run_augL_per_face(comp, A0,
     return A
 
 def main():
-    
-    
-    
     index_map = np.array([
         [[0,0,1,1,2],
          [0,1,1,2,2]],

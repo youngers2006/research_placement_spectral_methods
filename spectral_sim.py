@@ -414,7 +414,7 @@ class HyperElasticRVE():
                 )) 
         self.Disp = jax.jit(lambda coeffs, B: self.boundary_disp(coeffs, B))      
          
-def spectral_energy_sim():
+def spectral_energy_sim(coeffs):
     # order is the polynomial order - (n,n,n) where n is the order - resulting in n^3 * 3 sensitivities - (cross terms and dimension of the displacement vector)
     # rve.coeffs is set as a vector of zeros when HyperElasticRVE is called - but it can be changed after to the correct modes
     T1 = time.time()
@@ -424,6 +424,6 @@ def spectral_energy_sim():
     rve.build_basis_and_grads(rve.pts)
     rve.prepare_jit()
     T2 = time.time()
-    E = rve.Energy_fn(rve.coeffs)
-    dE_du = rve.dEnergy_dA_fn(rve.coeffs)
+    E = rve.Energy_fn(coeffs)
+    dE_du = rve.dEnergy_dA_fn(coeffs)
     return E, dE_du, T1, T2

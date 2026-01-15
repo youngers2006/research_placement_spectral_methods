@@ -241,7 +241,7 @@ class MultiRVEComponent:
         gz = (k + pts[:,2]) / self.O
         return np.stack([gx, gy, gz], axis=1)
     
-    def total_energy(self, A_flat: np.ndarray) -> np.ndarray:
+    def total_energy_FEM(self, A_flat: np.ndarray) -> np.ndarray:
         if not self._slices:
             self.build_packing()
         E = 0.0
@@ -253,6 +253,14 @@ class MultiRVEComponent:
                     A = A_flat[sl].reshape(3, rve.NB)
                     E = E + rve.Energy_fn(A)  # each rve.Energy_fn is already jitted
         return E
+    
+    def total_energy(self, A_flat: np.ndarray, surrogate_model) -> np.ndarray:
+        NB = self.rves[0][0][0].NB
+        num_rves = self.M * self.N * self.O
+        features_per_rve = 3 * NB
+        batch_coeffs = A_flat.reshape(num_rves, features_per_rve)
+        energy_batch, _ = ml_model.forward_pass(batch_coeffs)
+        return jnp.sum(energy_batch)
 
     def build_objective(self, rho_int=1e3, rho_bc=1e3):
         def obj(A_flat):

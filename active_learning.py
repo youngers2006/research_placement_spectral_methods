@@ -64,29 +64,46 @@ class ActiveLearningModel:
         self.alpha = alpha
         self.gamma = gamma
 
-    def kick_start(self, Dataset):
+    def kick_start(
+            self, 
+            Dataset: dict
+        ):
         mu_data, sigma_data = Dataset.statistics
         self.Model.mu = mu_data
         self.Model.sigma = sigma_data
         print("Kickstarting Model ...")
-        self.Learn(Dataset.batches.coefficients, Dataset.batches.energy, Dataset.batches.e_prime)
+        self.learn(Dataset.batches.coefficients, Dataset.batches.energy, Dataset.batches.e_prime)
         print("Kickstart Complete.")
         
-    def query_or_not(self, Coefficients):
+    def query_or_not(
+            self, 
+            Coefficients: jax.Array
+        ) -> tuple[jax.Array, jax.Array]:
         "Returns an array of indicies which correspond to displacement vectors that should and shouldnt be queried"
         query_array = self.M_input_filter.filter(Coefficients)
         should_query = jnp.where(query_array)[0]
         not_query = jnp.where(~query_array)[0]
         return should_query, not_query
     
-    def loss_fn(self, target_e_batch, target_e_prime_batch, e_pred_batch, e_prime_pred_batch):
+    def loss_fn(
+            self, 
+            target_e_batch: jax.Array, 
+            target_e_prime_batch: jax.Array, 
+            e_pred_batch: jax.Array, 
+            e_prime_pred_batch: jax.Array
+        ):
         "Defined loss function: uses MSE for both the energy and energy sensitivity"
         loss_e = jnp.mean((e_pred_batch - target_e_batch)**2)
         loss_e_prime = jnp.mean((e_prime_pred_batch - target_e_prime_batch)**2)
         return self.alpha * loss_e + self.gamma * loss_e_prime
     
     @nnx.jit
-    def train_step(self, target_e_batch, target_e_prime_batch, Coefficient_batch):
+    def train_step(
+        self, 
+        target_e_batch: jax.Array, 
+        target_e_prime_batch: jax.Array, 
+        Coefficient_batch: jax.Array
+        ):
         "Defines one step in which a batch is processed and the model weights are updated, jit compiled for speed"
         def wrapped_loss(Model):
             e_pred_batch, e_prime_pred_batch, _ = Model(Coefficient_batch)
@@ -101,7 +118,12 @@ class ActiveLearningModel:
         grads = nnx.grad(wrapped_loss, argnums=0)(self.Model)
         self.optimiser.update(self.Model, grads)
     
-    def Learn(self, coefficient_batch, target_energy_batch, target_derivative_batch):
+    def learn(
+            self, 
+            coefficient_batch: jax.Array, 
+            target_energy_batch: jax.Array, 
+            target_derivative_batch: jax.Array
+        ):
         "Iterates trainstep for a defined number of steps"
         for _ in tqdm(range(self.epochs), desc="Training Model", leave=False):
             self.train_step(
@@ -110,26 +132,29 @@ class ActiveLearningModel:
                 coefficient_batch
             )
     
-    def query_simulator(self, Coefficients): 
+    def query_simulator(self, coefficients_batch: jax.Array) -> tuple[jax.Array, jax.Array]:
         """calls a jax_fem simulation when queried by the model"""
-        vmapped_sim_fn = jax.vmap(fun=spectral_energy_sim, in_axes=(None, None, 0))
+        vmapped_sim_fn = jax.vmap(
+            fun=spectral_energy_sim, 
+            in_axes=(0)
+        )
         e_batch, e_prime_batch = vmapped_sim_fn(
-            Coefficients
+            coefficients_batch
         )
         return e_batch, e_prime_batch
         
-    def __call__(self, Coefficients: jax.Array) -> jax.Array:
+    def __call__(self, coefficients: jax.Array) -> jax.Array:
         """
         Main call: queries the FEM solver for all samples outside the geometric confidence bound and trains on the data,
             and all samples within the confidence bound are processed by the model. The predictions from the Model and simulation
             are then stitched together and returned.
         """
-        query_idx, confident_idx = self.query_or_not(Coefficients)
-        E, dE_dC, valid = self.Model(Coefficients[confident_idx])
+        query_idx, confident_idx = self.query_or_not(coefficients)
+        E, dE_dC, valid = self.Model(coefficients[confident_idx])
         query_idx = jnp.concatenate(query_idx, jnp.where(confident_idx, ~valid))
         
-        E_sim, dE_dC_sim = self.query_simulator(Coefficients) 
-        self.Learn(Coefficients[query_idx], E_sim, dE_dC_sim)
+        E_sim, dE_dC_sim = self.query_simulator(coefficients)
+        self.learn(coefficients[query_idx], E_sim, dE_dC_sim)
 
         E = restitch(jnp.where(confident_idx, valid), query_idx, E, E_sim)
         dE_dC = restitch(jnp.where(confident_idx, valid), query_idx, dE_dC, dE_dC_sim)
