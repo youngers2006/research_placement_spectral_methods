@@ -519,7 +519,6 @@ class MultiRVEComponent:
         NB = self.rves[0][0][0].NB
         N2 = self.N_face * self.N_face
     
-        # ---------- INTERNAL faces batch ----------
         int_pairs = list(self.iter_neighbor_pairs())
         Fint = len(int_pairs)
     
@@ -551,7 +550,6 @@ class MultiRVEComponent:
         else:
             self._int_batch = None
     
-        # ---------- EXTERNAL faces batches (one pack per BC) ----------
         self._ext_batches = []  # list of packs, one per registered BC
         for bc in self.dirichlet_bcs:
             # Which tiles on that boundary?
@@ -606,10 +604,6 @@ class MultiRVEComponent:
             self._sl_int = slice(0, self.Fint)
             self._sl_ext = slice(self.Fint, self.Ftot)
 
-
-    
-
-
 def _tile_slice(idx: int, n: int, ntiles: int) -> tuple[slice, slice]:
     """
     Return (global_slice, local_slice) for tile `idx` along one axis when
@@ -622,15 +616,15 @@ def _tile_slice(idx: int, n: int, ntiles: int) -> tuple[slice, slice]:
         l_sl = slice(0, n)
     else:
         start = idx * (n - 1)
-        g_sl = slice(start + 1, start + n)  # <-- start+1 so we *skip* the shared interior face
-        l_sl = slice(1, n)                  # <-- drop the first local plane
+        g_sl = slice(start + 1, start + n)  # start+1 so we *skip* the shared interior face
+        l_sl = slice(1, n)                  # drop the first local plane
     return g_sl, l_sl
 
 def export_assembled_structured_vts2(
     comp,
     A_flat,
     n_vis_per_rve: int = 17,
-    stacked_coords: bool = True,       # True => coordinates span [0..M]×[0..N]×[0..O]
+    stacked_coords: bool = True,       # coordinates span [0..M]×[0..N]×[0..O]
     add_solid_mask: bool = True,
     out_dir: str = "data/assembled",
     stem: str = "final",
@@ -717,7 +711,7 @@ def export_assembled_structured_vts2(
                     thr = 0.5 * (rve.E_in + rve.E_out)
                     SM = SM.at[gx_sl, gy_sl, gz_sl].set((E[lx_sl, ly_sl, lz_sl] > thr).astype(np.float64))
 
-    # -------- Build pyvista.StructuredGrid from points (avoid X/Y/Z order traps)
+    # Build pyvista.StructuredGrid from points (avoid X/Y/Z order traps)
     os.makedirs(out_dir, exist_ok=True)
 
     # Flatten everything in Fortran order to match VTK point ordering
@@ -822,7 +816,7 @@ def export_assembled_structured_vts(
     y = np.linspace(0.0, 1.0, n)
     z = np.linspace(0.0, 1.0, n)
 
-    # ---- helper: basis & grads at arbitrary points (no mutation) ----
+    # helper: basis & grads at arbitrary points (no mutation)
     def basis_and_grads_at(rve, points):
         # This mirrors HyperElasticRVE.build_basis_and_grads but returns arrays instead of setting attrs
         Px, Py, Pz = rve.order
@@ -879,7 +873,7 @@ def export_assembled_structured_vts(
         dBdz = np.stack(dz_cols, axis=1)
         return B, dBdx, dBdy, dBdz
 
-    # ---- stitch all tiles ----
+    # stitch all tiles 
     for i in range(comp.M):
         gx_sl, lx_sl = _tile_slice(i, n, comp.M)
         for j in range(comp.N):
@@ -935,7 +929,7 @@ def export_assembled_structured_vts(
                     thr = 0.5 * (rve.E_in + rve.E_out)
                     SM = SM.at[gx_sl, gy_sl, gz_sl].set((E[lx_sl, ly_sl, lz_sl] > thr).astype(np.float64))
 
-                # ---- strains (optional) ----
+                # strains (optional)
                 if export_small or export_green:
                     # reshape grads to (n,n,n,3)
                     dudx = du_dx.reshape(n, n, n, 3, order="F")
@@ -1003,7 +997,7 @@ def export_assembled_structured_vts(
                         ], axis=-1)  # (n,n,n,9)
                         Ften = Ften.at[gx_sl, gy_sl, gz_sl, :].set(Fpack[lx_sl, ly_sl, lz_sl, :])
 
-    # -------- Build pyvista.StructuredGrid from points (avoid X/Y/Z order traps)
+    # Build pyvista.StructuredGrid from points (avoid X/Y/Z order traps)
     os.makedirs(out_dir, exist_ok=True)
 
     # Flatten everything in Fortran order to match VTK point ordering

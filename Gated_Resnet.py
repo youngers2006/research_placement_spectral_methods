@@ -69,7 +69,7 @@ class GatedResnet(nnx.Module):
         x = self.z_scaler(x)
         x = self.encoder(x)
         x = self.network(x)
-        valid = self.Mahalanobis_filter(x)
+        valid = self.Mahalanobis_filter.filter(x)
         return self.prediction_head(x), valid
     
     def __call__(self, Coefficients):
@@ -81,6 +81,4 @@ class GatedResnet(nnx.Module):
             has_aux=True
         )
         (E, valid), dEdC = fn(Coefficients)
-        return E, dEdC, valid
-        
-        
+        return E, dEdC, valid     

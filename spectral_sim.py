@@ -102,15 +102,6 @@ class HyperElasticRVE():
                     cols.append(Vx[:, p] * Vy[:, q] * Vz[:, r])
         return jnp.stack(cols, axis=1)  # (N, NB)
 
-    # def _geom_E_eval(self, points):
-    #     """Evaluate the current geometry E (gyroid) at arbitrary points, JAX-only."""
-    #     x, y, z = points[:, 0], points[:, 1], points[:, 2]
-    #     g = (np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
-    #          + np.sin(2 * np.pi * y) * np.cos(2 * np.pi * z)
-    #          + np.sin(2 * np.pi * z) * np.cos(2 * np.pi * x))
-    #     inside = (np.abs(g) < 0.05)  # default thickness; adjust if you expose it
-    #     return np.where(inside, self.E_in, self.E_out)
-
     def face_basis(self, axis: str, side: str, N: int = None):
         """
         Basis matrix on a specified face.

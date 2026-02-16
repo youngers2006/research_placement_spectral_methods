@@ -19,4 +19,3 @@ class Swiglu(nnx.Module):
         hidden = nnx.swish(self.gate(x))
         value = self.value_net(x)
         return hidden * value
-    
